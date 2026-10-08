@@ -67,6 +67,7 @@ int argstr(int n, char *buf, int max) {
   return fetchstr(addr, buf, max);
 }
 
+extern uint64 sys_yield(void);
 extern uint64 sys_chdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_dup(void);
@@ -96,7 +97,7 @@ static uint64 (*syscalls[])(void) = {
     [SYS_chdir] sys_chdir, [SYS_dup] sys_dup,       [SYS_getpid] sys_getpid, [SYS_sbrk] sys_sbrk,
     [SYS_sleep] sys_sleep, [SYS_uptime] sys_uptime, [SYS_open] sys_open,     [SYS_write] sys_write,
     [SYS_mknod] sys_mknod, [SYS_unlink] sys_unlink, [SYS_link] sys_link,     [SYS_mkdir] sys_mkdir,
-    [SYS_close] sys_close, [SYS_rename] sys_rename,
+    [SYS_close] sys_close, [SYS_rename] sys_rename, [SYS_yield] sys_yield, 
 };
 
 void syscall(void) {

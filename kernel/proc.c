@@ -291,6 +291,20 @@ void reparent(struct proc *p) {
   }
 }
 
+// *Return a string representation of a process's state.
+static char *
+proc_state_name(enum procstate state)
+{
+  switch (state) {
+  case UNUSED:   return "unused";
+  case SLEEPING: return "sleep";
+  case RUNNABLE: return "runble";
+  case RUNNING:  return "run";
+  case ZOMBIE:   return "zombie";
+  default:       return "unknown";
+  }
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
@@ -338,6 +352,31 @@ void exit(int status) {
 
   acquire(&p->lock);
 
+  // Print parent process information.
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+            p->pid,
+            original_parent->pid,
+            original_parent->name,
+            proc_state_name(original_parent->state));
+
+  // Print child process information.
+  int child_num = 0;
+  for (struct proc *child = proc; child < &proc[NPROC]; child++) {
+    if (child->parent == p) {
+      acquire(&child->lock);
+
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+                p->pid,
+                child_num,
+                child->pid,
+                child->name,
+                proc_state_name(child->state));
+
+      child_num++;
+      release(&child->lock);
+    }
+  }
+
   // Give any children to init.
   reparent(p);
 
@@ -356,7 +395,7 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr, int flags) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -395,7 +434,7 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    if (!havekids || p->killed || flags == 1) {
       release(&p->lock);
       return -1;
     }
@@ -425,6 +464,11 @@ void scheduler(void) {
     for (p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
+        if (c->yield_report) {
+          printf("Next runnable process pid is %d and user pc is %p\n",
+          p->pid, p->trapframe->epc);
+          c->yield_report = 0;
+        }
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.

@@ -7,6 +7,28 @@
 #include "spinlock.h"
 #include "proc.h"
 
+uint64 sys_yield(void) {
+  struct proc *p = myproc();
+
+  acquire(&p->lock);
+
+  uint64 start = (uint64)&p->context;
+  uint64 end = start + sizeof(p->context);
+
+  printf("Save the context of the process to the memory region "
+         "from address %p to %p\n", start, end);
+
+  printf("Current running process pid is %d and user pc is %p\n",
+         p->pid, p->trapframe->epc);
+
+  mycpu()->yield_report = 1;
+  p->state = RUNNABLE;
+  sched();
+
+  release(&p->lock);
+  return 0;
+}
+
 uint64 sys_exit(void) {
   int n;
   if (argint(0, &n) < 0) return -1;
@@ -20,8 +42,11 @@ uint64 sys_fork(void) { return fork(); }
 
 uint64 sys_wait(void) {
   uint64 p;
+  int flags;
   if (argaddr(0, &p) < 0) return -1;
-  return wait(p);
+  if (argint(1, &flags) < 0) return -1;
+
+  return wait(p, flags);
 }
 
 uint64 sys_sbrk(void) {
