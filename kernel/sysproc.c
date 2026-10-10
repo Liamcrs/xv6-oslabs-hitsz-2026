@@ -106,3 +106,65 @@ uint64 sys_rename(void) {
   p->name[len] = '\0';
   return 0;
 }
+
+uint64 sys_seccomp_ctl(void) {
+  int op;
+  uint64 value;
+
+  if (argint(0, &op) < 0)
+    return -1;
+  if (argaddr(1, &value) < 0)
+    return -1;
+
+  if (op == 0) {
+    myproc()->seccomp_mask = value;
+    return 0;
+  }
+
+  if (op == 1) {
+    myproc()->max_children = value;
+    return 0;
+  }
+
+  return -1;
+}
+
+uint64 sys_seccomp_getlog(void) {
+  uint64 buf_addr;
+  uint64 len_addr;
+  int capacity;
+  struct proc *p = myproc();
+
+  // 1. 获取用户传入的两个地址。
+  if (argaddr(0, &buf_addr) < 0)
+    return -1;
+  if (argaddr(1, &len_addr) < 0)
+    return -1;
+
+  // 2. 读取用户提供的容量。
+  if (copyin(p->pagetable, (char *)&capacity,
+             len_addr, sizeof(capacity)) < 0)
+    return -1;
+
+  if (capacity < 0)
+    return -1;
+
+  // 3. 确定实际复制多少条。
+  int count = p->seccomp_log_count;
+  if (count > capacity)
+    count = capacity;
+
+  // 4. 把日志复制给用户。
+  if (count > 0 &&
+      copyout(p->pagetable, buf_addr,
+              (char *)p->seccomp_log,
+              count * sizeof(uint64)) < 0)
+    return -1;
+
+  // 5. 把实际条目数写回用户的 len。
+  if (copyout(p->pagetable, len_addr,
+              (char *)&count, sizeof(count)) < 0)
+    return -1;
+
+  return 0;
+}

@@ -97,6 +97,13 @@ static struct proc *allocproc(void) {
 found:
   p->pid = allocpid();
 
+  p->seccomp_mask = ~0ULL;
+  p->seccomp_log_count = 0;
+  memset(p->seccomp_log, 0, sizeof(p->seccomp_log));
+
+  p->child_count = 0;
+  p->max_children = ~0ULL;
+
   // Allocate a trapframe page.
   if ((p->trapframe = (struct trapframe *)kalloc()) == 0) {
     release(&p->lock);
@@ -230,15 +237,35 @@ int fork(void) {
   struct proc *np;
   struct proc *p = myproc();
 
-  // Allocate process.
-  if ((np = allocproc()) == 0) {
+  acquire(&p->lock);
+
+  if ((uint64)p->child_count >= p->max_children) {
+    release(&p->lock);
     return -1;
   }
 
-  // Copy user memory from parent to child.
+  p->child_count++;
+  release(&p->lock);
+
+  // Allocate process.
+  if ((np = allocproc()) == 0) {
+    acquire(&p->lock);
+    p->child_count--;
+    release(&p->lock);
+    return -1;
+  }
+
+  np->seccomp_mask = p->seccomp_mask;
+  np->max_children = p->max_children;
+
   if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
     freeproc(np);
     release(&np->lock);
+
+    acquire(&p->lock);
+    p->child_count--;
+    release(&p->lock);
+
     return -1;
   }
   np->sz = p->sz;
@@ -333,6 +360,13 @@ void exit(int status) {
   // necessary or not. init may miss this wakeup, but that seems
   // harmless.
   acquire(&initproc->lock);
+
+  // 为稍后交给 init 的子进程转移计数。
+  acquire(&p->lock);
+  initproc->child_count += p->child_count;
+  p->child_count = 0;
+  release(&p->lock);
+
   wakeup1(initproc);
   release(&initproc->lock);
 
@@ -424,6 +458,8 @@ int wait(uint64 addr, int flags) {
             release(&p->lock);
             return -1;
           }
+          p->child_count--;
+
           freeproc(np);
           release(&np->lock);
           release(&p->lock);
